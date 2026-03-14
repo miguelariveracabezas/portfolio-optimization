@@ -1,87 +1,74 @@
-# Mean–Variance Portfolio Optimization
+# S&P 500 Cross-Sectional Momentum Strategy
 
-A Python implementation of constrained mean–variance portfolio optimization using **Ledoit-Wolf shrinkage**, **Black-Litterman expected returns**, and **out-of-sample validation**.
-
----
-
-## Overview
-
-This project constructs an efficient frontier across six ETFs and identifies the **maximum Sharpe ratio (tangency) portfolio** using institutional-grade estimation techniques. A train/test split evaluates out-of-sample performance against a minimum-variance and equal-weight benchmark.
+A fully systematic quant equity strategy backtested over 10 years on the top 50 S&P 500 stocks by market cap. Combines academic momentum signals with institutional-grade portfolio construction and realistic execution simulation.
 
 ---
 
-## Assets
+## Strategy Summary
 
-| Ticker | Exposure |
-|--------|----------|
-| SPY | US Large Cap Blend |
-| QQQ | US Large Cap Tech |
-| IWM | US Small Cap |
-| EFA | International Developed |
-| EEM | Emerging Markets |
-| TLT | US Long-Term Bonds |
+| Parameter | Value |
+|-----------|-------|
+| **Universe** | Top 50 S&P 500 stocks by market cap |
+| **Signal** | 12-1 month cross-sectional momentum |
+| **Holdings** | Top 20 momentum winners each month |
+| **Sizing** | Mean-variance optimization (Ledoit-Wolf + Black-Litterman) |
+| **Rebalance** | Monthly |
+| **Max position** | 15% per stock |
+| **Benchmark** | SPY (buy-and-hold) |
 
 ---
 
 ## Methodology
 
-### 1. Covariance Estimation — Ledoit-Wolf Shrinkage
-The sample covariance matrix is replaced with a **shrinkage estimator** (Ledoit & Wolf, 2004). This reduces in-sample overfitting by pulling extreme off-diagonal correlations toward a structured target, producing more stable portfolio weights.
+### Signal: 12-1 Month Momentum
+At each monthly rebalance, every stock is scored by its cumulative return from 12 months ago to 1 month ago:
 
-### 2. Expected Returns — Black-Litterman Equilibrium
-Rather than using noisy historical sample means, expected returns are derived from **market-implied equilibrium returns**:
+Mom_t = P(t-21) / P(t-252) - 1
 
-$$\Pi = \delta \Sigma w^{mkt}$$
+The 1-month skip avoids short-term reversal (Jegadeesh & Titman, 1993). The top 20 stocks by momentum score are selected for the portfolio.
 
-where $\delta$ is the implied market risk aversion, $\Sigma$ is the shrunk covariance, and $w^{mkt}$ are approximate market-cap weights. This anchors returns to what markets are already pricing in, dramatically reducing estimation error.
+### Portfolio Sizing: MVO + Ledoit-Wolf + Black-Litterman
+**Covariance:** Ledoit-Wolf shrinkage on trailing 252-day returns.
 
-### 3. Efficient Frontier — Target-Return Sweep
-Instead of sweeping a scalar risk-aversion parameter $\lambda$ (which clusters points non-uniformly), the frontier is traced by fixing a **target return** $\mu^*$ and solving:
+**Expected returns:** Black-Litterman equilibrium returns Pi = delta * Sigma * w_eq, tilted by momentum z-scores:
 
-$$\min_w \; w^\top \Sigma w \quad \text{s.t.} \quad \mu^\top w = \mu^*, \; \sum w_i = 1, \; 0 \leq w_i \leq 0.30$$
+mu_BL = Pi + alpha * z_mom
 
-This gives evenly spaced frontier points and a cleaner view of the risk-return tradeoff.
+**Optimization:** Maximise Sharpe ratio subject to long-only, 15% position cap.
 
-### 4. Tangency Portfolio
-The **maximum Sharpe ratio portfolio** is found by solving:
+### Execution Costs
+- Bid-ask spread: 5bps one-way per position traded
+- Market impact: 10bps one-way per position traded
+- Applied on absolute weight change (turnover-scaled)
 
-$$\max_w \; \frac{\mu^\top w - r_f}{\sqrt{w^\top \Sigma w}}$$
+### Risk Management
+**Per-position stop-loss:** Exit any stock down >12% from entry price.
 
-This is the point where the **Capital Market Line** is tangent to the efficient frontier — the optimal risky portfolio for any investor who can mix with the risk-free asset.
-
-### 5. Out-of-Sample Validation
-Weights are **frozen** at the training cutoff and evaluated on held-out data. Three portfolios are compared:
-
-| Portfolio | Construction |
-|-----------|-------------|
-| Tangency (Max-Sharpe) | Optimized on training data |
-| Min-Variance | Lowest-vol portfolio from training |
-| Equal-Weight (1/N) | Naive benchmark |
+**Portfolio circuit breaker:** Liquidate all positions if drawdown exceeds 20%. Resume when drawdown recovers above 10%.
 
 ---
 
-## Results
+## Performance Tearsheet
 
-The notebook produces:
-- **Efficient frontier** colored by Sharpe ratio with individual assets overlaid
-- **Capital Market Line** from the risk-free rate through the tangency portfolio
-- **Tangency portfolio weights** bar chart
-- **Cumulative return** chart comparing all three portfolios out-of-sample
+8-panel output:
+1. Cumulative return (log scale) vs SPY
+2. Drawdown — strategy vs benchmark
+3. Rolling 12M Sharpe ratio
+4. Rolling 12M volatility
+5. Daily return distribution
+6. Monthly returns heatmap (year x month)
+7. Monthly portfolio turnover
+8. Number of holdings / circuit breaker activity
 
 ---
 
 ## Setup
 
 ```bash
-# Clone the repo
-git clone https://github.com/YOUR_USERNAME/portfolio-optimization.git
-cd portfolio-optimization
-
-# Install dependencies
+git clone https://github.com/YOUR_USERNAME/sp500-momentum-strategy.git
+cd sp500-momentum-strategy
 pip install -r requirements.txt
-
-# Launch notebook
-jupyter notebook portfolio_optimization.ipynb
+jupyter notebook momentum_strategy.ipynb
 ```
 
 ---
@@ -89,19 +76,13 @@ jupyter notebook portfolio_optimization.ipynb
 ## Dependencies
 
 ```
-yfinance
-pandas
-numpy
-scipy
-scikit-learn
-matplotlib
+yfinance>=0.2.0
+pandas>=2.0
+numpy>=1.24
+scipy>=1.10
+scikit-learn>=1.3
+matplotlib>=3.7
 jupyter
-```
-
-Or install directly:
-
-```bash
-pip install yfinance pandas numpy scipy scikit-learn matplotlib jupyter
 ```
 
 ---
@@ -109,29 +90,26 @@ pip install yfinance pandas numpy scipy scikit-learn matplotlib jupyter
 ## Project Structure
 
 ```
-portfolio-optimization/
-│
-├── portfolio_optimization.ipynb   # Main notebook
-├── README.md                      # This file
-└── requirements.txt               # Dependencies
+sp500-momentum-strategy/
+├── momentum_strategy.ipynb    # Main strategy notebook
+├── README.md                  # This file
+└── requirements.txt           # Python dependencies
 ```
 
 ---
 
-## Key Parameters
+## Limitations
 
-| Parameter | Value | Description |
-|-----------|-------|-------------|
-| `RF` | 5.2% | Annualised risk-free rate |
-| `W_MAX` | 30% | Maximum weight per asset |
-| `TRAIN_END` | 2023-01-01 | Train/test split date |
-| Train window | 2018–2022 | ~1,250 trading days |
-| Test window | 2023–2025 | ~500 trading days |
+- **Survivorship bias:** Universe uses current S&P 500 constituents — delisted stocks not included
+- **Transaction costs:** Estimated; real impact scales with AUM
+- **Momentum crashes:** Strategy is exposed to sharp reversals during market recoveries
+- **Look-ahead bias:** None — all signals use strictly prior data
 
 ---
 
 ## References
 
-- Ledoit, O. & Wolf, M. (2004). *A well-conditioned estimator for large-dimensional covariance matrices.* Journal of Multivariate Analysis.
-- Black, F. & Litterman, R. (1992). *Global Portfolio Optimization.* Financial Analysts Journal.
-- Markowitz, H. (1952). *Portfolio Selection.* Journal of Finance.
+- Jegadeesh & Titman (1993). *Returns to Buying Winners and Selling Losers.* Journal of Finance.
+- Black & Litterman (1992). *Global Portfolio Optimization.* Financial Analysts Journal.
+- Ledoit & Wolf (2004). *A well-conditioned estimator for large-dimensional covariance matrices.*
+- Daniel & Moskowitz (2016). *Momentum Crashes.* Journal of Financial Economics.
